@@ -8,7 +8,10 @@ use crate::config::Config;
 use crate::handlers::{health_handler, ready_handler, rerank_handler};
 use crate::state::AppState;
 
-use axum::{routing::{get, post}, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -48,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(state);
     tracing::info!(
         elapsed_ms = start.elapsed().as_millis() as u64,
-        "State initialized"
+        "State initialized",
     );
 
     // Build router

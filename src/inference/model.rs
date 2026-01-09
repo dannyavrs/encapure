@@ -5,6 +5,7 @@ use ort::{
     session::{builder::GraphOptimizationLevel, Session},
     value::Tensor,
 };
+use std::cell::UnsafeCell;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -20,10 +21,11 @@ use std::sync::Arc;
 /// The pool guarantees that each session index is held by at most one thread
 /// at a time. The ArrayQueue provides this guarantee through atomic operations.
 /// Sessions themselves are not shared - each inference gets exclusive access
-/// to its acquired session.
+/// to its acquired session via UnsafeCell, which is safe because the ArrayQueue
+/// ensures only one thread holds each index at any time.
 pub struct RerankerModel {
-    /// Pool of ONNX sessions - one per CPU core
-    sessions: Vec<std::sync::Mutex<Session>>,
+    /// Pool of ONNX sessions - exclusive access guaranteed by ArrayQueue
+    sessions: Vec<UnsafeCell<Session>>,
     /// Lock-free queue of available session indices
     available: Arc<ArrayQueue<usize>>,
 }
@@ -58,7 +60,7 @@ impl RerankerModel {
                 .commit_from_memory(&model_bytes)
                 .map_err(|e: ort::Error| AppError::ModelError(e.to_string()))?;
 
-            sessions.push(std::sync::Mutex::new(session));
+            sessions.push(UnsafeCell::new(session));
             // Mark this session index as available
             available
                 .push(i)
@@ -146,10 +148,10 @@ impl RerankerModel {
         let attention_mask_tensor = Tensor::from_array((shape, attention_mask_vec))
             .map_err(|e| AppError::ModelError(e.to_string()))?;
 
-        // Lock the specific session and run inference
-        let mut session = self.sessions[session_idx]
-            .lock()
-            .map_err(|e| AppError::ModelError(format!("Session lock poisoned: {}", e)))?;
+        // SAFETY: ArrayQueue guarantees exclusive access to this index.
+        // Only one thread can hold session_idx between acquire_session() and release_session().
+        // The ArrayQueue acts as our synchronization primitive, making the UnsafeCell access safe.
+        let session = unsafe { &mut *self.sessions[session_idx].get() };
 
         // Note: XLM-RoBERTa models only need input_ids and attention_mask
         let outputs = session
@@ -178,9 +180,12 @@ impl RerankerModel {
 
 }
 
-// Safety: RerankerModel is Send + Sync because:
-// - Each Session is wrapped in its own Mutex for exclusive access
-// - The ArrayQueue is thread-safe and lock-free
-// - The acquire/release pattern ensures exclusive access to each session
+// SAFETY: RerankerModel is Send + Sync because:
+// - ArrayQueue is lock-free and thread-safe (crossbeam guarantee)
+// - ArrayQueue::pop() returns each index to at most one caller at a time
+// - ArrayQueue::push() returns the index to the pool for reuse
+// - Between pop and push, only one thread can access each UnsafeCell<Session>
+// - This provides the same mutual exclusion guarantee as a Mutex, but without blocking
+// - Sessions are never accessed without first acquiring their index from the queue
 unsafe impl Send for RerankerModel {}
 unsafe impl Sync for RerankerModel {}

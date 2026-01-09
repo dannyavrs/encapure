@@ -8,6 +8,10 @@ pub struct Config {
     pub tokenizer_path: PathBuf,
     pub max_sequence_length: usize,
     pub shutdown_timeout_secs: u64,
+    /// Optional override for session pool size. If None, uses physical cores.
+    pub pool_size: Option<usize>,
+    /// Maximum documents per rerank request.
+    pub max_documents: usize,
 }
 
 impl Config {
@@ -27,10 +31,16 @@ impl Config {
                     .unwrap_or_else(|_| "./models/tokenizer.json".to_string()),
             ),
             max_sequence_length: env::var("MAX_SEQ_LENGTH")
-                .unwrap_or_else(|_| "8192".to_string())
+                .unwrap_or_else(|_| "1024".to_string())
                 .parse()?,
             shutdown_timeout_secs: env::var("SHUTDOWN_TIMEOUT")
                 .unwrap_or_else(|_| "30".to_string())
+                .parse()?,
+            pool_size: env::var("POOL_SIZE")
+                .ok()
+                .and_then(|s| s.parse().ok()),
+            max_documents: env::var("MAX_DOCUMENTS")
+                .unwrap_or_else(|_| "16".to_string())
                 .parse()?,
         })
     }

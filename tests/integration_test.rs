@@ -127,11 +127,12 @@ async fn test_rerank_empty_documents_returns_400() {
 #[ignore = "Requires model files - run with --ignored after exporting model"]
 async fn test_rerank_too_many_documents_returns_400() {
     let config = Config::from_env().expect("Failed to load config");
+    let max_docs = config.max_documents;
     let state = Arc::new(AppState::new(config).expect("Failed to create AppState"));
     let app = create_test_app(state);
 
-    // Create 101 documents (exceeds limit of 100)
-    let documents: Vec<String> = (0..101).map(|i| format!("document {}", i)).collect();
+    // Create max_docs + 1 documents (exceeds configured limit)
+    let documents: Vec<String> = (0..=max_docs).map(|i| format!("document {}", i)).collect();
 
     let body = json!({
         "query": "test query",
@@ -141,7 +142,7 @@ async fn test_rerank_too_many_documents_returns_400() {
     let (status, response) = json_request(app, "POST", "/rerank", Some(body)).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(response["error"].as_str().unwrap().contains("100"));
+    assert!(response["error"].as_str().unwrap().contains("Maximum"));
 }
 
 #[tokio::test]

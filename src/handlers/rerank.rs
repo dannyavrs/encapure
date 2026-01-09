@@ -46,9 +46,10 @@ pub async fn rerank_handler(
             "Documents list cannot be empty".to_string(),
         ));
     }
-    if request.documents.len() > 100 {
+    let max_docs = state.config.max_documents;
+    if request.documents.len() > max_docs {
         return Err(AppError::ValidationError(
-            "Maximum 100 documents per request".to_string(),
+            format!("Maximum {} documents per request", max_docs),
         ));
     }
 

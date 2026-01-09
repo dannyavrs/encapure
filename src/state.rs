@@ -21,20 +21,34 @@ impl AppState {
     /// Initialize application state.
     ///
     /// # Semaphore Strategy
-    /// Permits = CPU cores. Each inference request acquires one permit,
-    /// ensuring we never have more concurrent inferences than CPUs.
+    /// Permits = physical CPU cores. Each inference request acquires one permit,
+    /// ensuring we never have more concurrent inferences than physical cores.
     /// This prevents thread thrashing when ONNX intra_threads=1.
     ///
+    /// # Why Physical Cores Only?
+    /// Hyperthreads (logical cores) share the same physical core's execution units.
+    /// Running CPU-intensive inference on both hyperthreads causes contention,
+    /// cache thrashing, and context switching overhead.
+    ///
     /// # Session Pool
-    /// We create one ONNX session per CPU core, enabling true parallel
-    /// inference without Mutex contention.
+    /// We create one ONNX session per physical core, enabling true parallel
+    /// inference without contention.
     pub fn new(config: Config) -> Result<Self> {
         // Detect available CPU cores
-        let num_cores = std::thread::available_parallelism()
+        let logical_cores = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4);
 
-        tracing::info!(num_cores, "Detected CPU cores for session pool");
+        // Use physical cores only (logical / 2 on hyperthreaded systems)
+        // Can be overridden via POOL_SIZE env var
+        let num_cores = config.pool_size.unwrap_or_else(|| (logical_cores / 2).max(1));
+
+        tracing::info!(
+            logical_cores,
+            physical_cores = num_cores,
+            pool_size_override = config.pool_size,
+            "Configured session pool size"
+        );
 
         // Load model pool and tokenizer
         let model = RerankerModel::load_pool(&config.model_path, num_cores)?;
