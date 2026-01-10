@@ -57,6 +57,8 @@ impl RerankerModel {
                 .map_err(|e| AppError::ModelError(e.to_string()))?
                 .with_intra_threads(1)
                 .map_err(|e| AppError::ModelError(e.to_string()))?
+                .with_inter_threads(1)
+                .map_err(|e| AppError::ModelError(e.to_string()))?
                 .commit_from_memory(&model_bytes)
                 .map_err(|e: ort::Error| AppError::ModelError(e.to_string()))?;
 
@@ -80,51 +82,62 @@ impl RerankerModel {
     }
 
     /// Acquire a session from the pool for exclusive use.
-    /// Returns the session index, which must be released after use.
-    fn acquire_session(&self) -> Result<usize> {
+    ///
+    /// Returns the session index, which MUST be released via `release_session()`.
+    /// This should be called BEFORE `spawn_blocking` to reserve a session
+    /// while holding the semaphore permit, preventing race conditions.
+    pub fn acquire_session(&self) -> Result<usize> {
         self.available
             .pop()
             .ok_or_else(|| AppError::ResourceError("No available sessions in pool".into()))
     }
 
     /// Release a session back to the pool.
-    fn release_session(&self, index: usize) {
+    ///
+    /// Must be called after inference completes (or on error/timeout).
+    pub fn release_session(&self, index: usize) {
         // This should never fail since we only release indices we acquired
         let _ = self.available.push(index);
     }
 
-    /// Run inference on tokenized inputs.
-    /// Returns raw logits (pre-sigmoid) for each document.
+    /// Run inference on tokenized inputs using a pre-acquired session.
     ///
-    /// This method acquires a session from the pool, runs inference,
-    /// and returns the session to the pool automatically.
-    ///
-    /// Note: token_type_ids is accepted for API compatibility but ignored
-    /// since XLM-RoBERTa models don't use it.
-    pub fn inference(
+    /// The caller MUST have acquired the session via `acquire_session()` and
+    /// MUST release it via `release_session()` after this call completes.
+    pub fn inference_with_session(
         &self,
+        session_idx: usize,
         input_ids: Array2<i64>,
         attention_mask: Array2<i64>,
-        _token_type_ids: Array2<i64>,
+        token_type_ids: Array2<i64>,
     ) -> Result<Vec<f32>> {
         let batch_size = input_ids.nrows();
         let seq_len = input_ids.ncols();
 
-        // Acquire a session from the pool
-        let session_idx = self.acquire_session()?;
-
-        // Use a guard pattern to ensure session is always released
-        let result = self.run_inference_on_session(
+        self.run_inference_on_session(
             session_idx,
             input_ids,
             attention_mask,
+            token_type_ids,
             batch_size,
             seq_len,
-        );
+        )
+    }
 
-        // Always release the session back to the pool
+    /// Run inference on tokenized inputs (convenience method for warmup/single requests).
+    ///
+    /// This method acquires a session, runs inference, and releases automatically.
+    /// For high-concurrency scenarios, prefer `acquire_session` + `inference_with_session`
+    /// + `release_session` to control session lifetime explicitly.
+    pub fn inference(
+        &self,
+        input_ids: Array2<i64>,
+        attention_mask: Array2<i64>,
+        token_type_ids: Array2<i64>,
+    ) -> Result<Vec<f32>> {
+        let session_idx = self.acquire_session()?;
+        let result = self.inference_with_session(session_idx, input_ids, attention_mask, token_type_ids);
         self.release_session(session_idx);
-
         result
     }
 
@@ -134,12 +147,14 @@ impl RerankerModel {
         session_idx: usize,
         input_ids: Array2<i64>,
         attention_mask: Array2<i64>,
+        token_type_ids: Array2<i64>,
         batch_size: usize,
         seq_len: usize,
     ) -> Result<Vec<f32>> {
         // Get raw data as contiguous vectors
         let input_ids_vec: Vec<i64> = input_ids.iter().cloned().collect();
         let attention_mask_vec: Vec<i64> = attention_mask.iter().cloned().collect();
+        let token_type_ids_vec: Vec<i64> = token_type_ids.iter().cloned().collect();
 
         // Create tensors with shape info
         let shape = [batch_size, seq_len];
@@ -147,17 +162,20 @@ impl RerankerModel {
             .map_err(|e| AppError::ModelError(e.to_string()))?;
         let attention_mask_tensor = Tensor::from_array((shape, attention_mask_vec))
             .map_err(|e| AppError::ModelError(e.to_string()))?;
+        let token_type_ids_tensor = Tensor::from_array((shape, token_type_ids_vec))
+            .map_err(|e| AppError::ModelError(e.to_string()))?;
 
         // SAFETY: ArrayQueue guarantees exclusive access to this index.
         // Only one thread can hold session_idx between acquire_session() and release_session().
         // The ArrayQueue acts as our synchronization primitive, making the UnsafeCell access safe.
         let session = unsafe { &mut *self.sessions[session_idx].get() };
 
-        // Note: XLM-RoBERTa models only need input_ids and attention_mask
+        // BGE reranker requires all three inputs: input_ids, attention_mask, token_type_ids
         let outputs = session
             .run(ort::inputs![
                 "input_ids" => input_ids_tensor,
                 "attention_mask" => attention_mask_tensor,
+                "token_type_ids" => token_type_ids_tensor,
             ])
             .map_err(|e| AppError::ModelError(e.to_string()))?;
 

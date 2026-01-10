@@ -63,6 +63,11 @@ pub async fn rerank_handler(
         })?
         .map_err(|_| AppError::ResourceError("Semaphore closed".to_string()))?;
 
+    // Acquire session BEFORE spawn_blocking to prevent race conditions.
+    // Since semaphore has N permits and pool has N sessions, this always succeeds
+    // immediately when we hold a permit.
+    let session_idx = state.model.acquire_session()?;
+
     // Clone Arcs for the blocking task
     let model = Arc::clone(&state.model);
     let tokenizer = Arc::clone(&state.tokenizer);
@@ -71,20 +76,26 @@ pub async fn rerank_handler(
 
     // Run CPU-bound work in blocking task pool with timeout
     let inference_timeout = Duration::from_secs(30);
-    let scores = tokio::time::timeout(
+    let result = tokio::time::timeout(
         inference_timeout,
         tokio::task::spawn_blocking(move || {
             // Tokenize
             let (input_ids, attention_mask, token_type_ids) =
                 tokenizer.tokenize_pairs(&query, &documents)?;
 
-            // Inference
-            model.inference(input_ids, attention_mask, token_type_ids)
+            // Inference with pre-acquired session
+            model.inference_with_session(session_idx, input_ids, attention_mask, token_type_ids)
         }),
     )
-    .await
-    .map_err(|_| AppError::ResourceError("Inference timeout exceeded (30s)".to_string()))?
-    .map_err(|e| AppError::ModelError(format!("Task join error: {}", e)))??;
+    .await;
+
+    // Always release the session, even on timeout or error
+    state.model.release_session(session_idx);
+
+    // Now handle the result
+    let scores = result
+        .map_err(|_| AppError::ResourceError("Inference timeout exceeded (30s)".to_string()))?
+        .map_err(|e| AppError::ModelError(format!("Task join error: {}", e)))??;
 
     // Apply sigmoid and create ranked results
     let mut results: Vec<RankedDocument> = scores

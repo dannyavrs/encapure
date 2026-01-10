@@ -24,7 +24,7 @@ impl Config {
                 .parse()?,
             model_path: PathBuf::from(
                 env::var("MODEL_PATH")
-                    .unwrap_or_else(|_| "./models/model_quantized.onnx".to_string()),
+                    .unwrap_or_else(|_| "./models/model_quint8_avx2.onnx".to_string()),
             ),
             tokenizer_path: PathBuf::from(
                 env::var("TOKENIZER_PATH")
@@ -36,11 +36,9 @@ impl Config {
             shutdown_timeout_secs: env::var("SHUTDOWN_TIMEOUT")
                 .unwrap_or_else(|_| "30".to_string())
                 .parse()?,
-            pool_size: env::var("POOL_SIZE")
-                .ok()
-                .and_then(|s| s.parse().ok()),
+            pool_size: env::var("POOL_SIZE").ok().and_then(|s| s.parse().ok()),
             max_documents: env::var("MAX_DOCUMENTS")
-                .unwrap_or_else(|_| "16".to_string())
+                .unwrap_or_else(|_| "50".to_string())
                 .parse()?,
         })
     }
