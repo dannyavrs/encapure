@@ -9,6 +9,7 @@ use crate::handlers::{health_handler, ready_handler, rerank_handler};
 use crate::state::AppState;
 
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Router,
 };
@@ -56,8 +57,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Build router
     let app = Router::new()
-        // Core endpoints
-        .route("/rerank", post(rerank_handler))
+        // Core endpoints - rerank needs larger body limit for batch requests
+        .route(
+            "/rerank",
+            post(rerank_handler).layer(DefaultBodyLimit::max(50 * 1024 * 1024)),
+        )
         // Health endpoints
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))

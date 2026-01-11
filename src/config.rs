@@ -12,6 +12,8 @@ pub struct Config {
     pub pool_size: Option<usize>,
     /// Maximum documents per rerank request.
     pub max_documents: usize,
+    /// Batch size for internal chunking during inference.
+    pub batch_size: usize,
 }
 
 impl Config {
@@ -38,7 +40,10 @@ impl Config {
                 .parse()?,
             pool_size: env::var("POOL_SIZE").ok().and_then(|s| s.parse().ok()),
             max_documents: env::var("MAX_DOCUMENTS")
-                .unwrap_or_else(|_| "50".to_string())
+                .unwrap_or_else(|_| "2000".to_string())
+                .parse()?,
+            batch_size: env::var("BATCH_SIZE")
+                .unwrap_or_else(|_| "32".to_string())
                 .parse()?,
         })
     }

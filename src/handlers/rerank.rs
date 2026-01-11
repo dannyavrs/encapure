@@ -53,10 +53,11 @@ pub async fn rerank_handler(
         ));
     }
 
-    let batch_size = request.documents.len();
+    let total_docs = request.documents.len();
 
     // Acquire semaphore with timeout (503 if service overloaded)
-    let _permit = tokio::time::timeout(Duration::from_secs(5), state.semaphore.acquire())
+    // Extended timeout for large batch requests
+    let _permit = tokio::time::timeout(Duration::from_secs(30), state.semaphore.acquire())
         .await
         .map_err(|_| {
             AppError::ResourceError("Service temporarily overloaded, please retry".to_string())
@@ -73,18 +74,34 @@ pub async fn rerank_handler(
     let tokenizer = Arc::clone(&state.tokenizer);
     let documents = request.documents.clone();
     let query = request.query.clone();
+    let chunk_size = state.config.batch_size;
 
     // Run CPU-bound work in blocking task pool with timeout
-    let inference_timeout = Duration::from_secs(30);
+    // Extended timeout for large requests (5 minutes)
+    let inference_timeout = Duration::from_secs(300);
     let result = tokio::time::timeout(
         inference_timeout,
         tokio::task::spawn_blocking(move || {
-            // Tokenize
-            let (input_ids, attention_mask, token_type_ids) =
-                tokenizer.tokenize_pairs(&query, &documents)?;
+            let mut all_scores: Vec<f32> = Vec::with_capacity(documents.len());
 
-            // Inference with pre-acquired session
-            model.inference_with_session(session_idx, input_ids, attention_mask, token_type_ids)
+            // Process documents in batches for memory efficiency
+            for chunk in documents.chunks(chunk_size) {
+                // Tokenize this batch
+                let (input_ids, attention_mask, token_type_ids) =
+                    tokenizer.tokenize_pairs(&query, chunk)?;
+
+                // Inference with pre-acquired session
+                let batch_scores = model.inference_with_session(
+                    session_idx,
+                    input_ids,
+                    attention_mask,
+                    token_type_ids,
+                )?;
+
+                all_scores.extend(batch_scores);
+            }
+
+            Ok::<Vec<f32>, AppError>(all_scores)
         }),
     )
     .await;
@@ -116,10 +133,10 @@ pub async fn rerank_handler(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    tracing::debug!(batch_size, "Rerank completed");
+    tracing::debug!(total_docs, "Rerank completed");
 
     metrics::counter!("rerank_requests_total").increment(1);
-    metrics::histogram!("rerank_batch_size").record(batch_size as f64);
+    metrics::histogram!("rerank_batch_size").record(total_docs as f64);
 
     Ok(Json(RerankResponse { results }))
 }
