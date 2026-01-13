@@ -40,7 +40,7 @@ impl Config {
                 .parse()?,
             pool_size: env::var("POOL_SIZE").ok().and_then(|s| s.parse().ok()),
             max_documents: env::var("MAX_DOCUMENTS")
-                .unwrap_or_else(|_| "2000".to_string())
+                .unwrap_or_else(|_| "100000".to_string())
                 .parse()?,
             batch_size: env::var("BATCH_SIZE")
                 .unwrap_or_else(|_| "32".to_string())

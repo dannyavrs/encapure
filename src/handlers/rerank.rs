@@ -48,9 +48,10 @@ pub async fn rerank_handler(
     }
     let max_docs = state.config.max_documents;
     if request.documents.len() > max_docs {
-        return Err(AppError::ValidationError(
-            format!("Maximum {} documents per request", max_docs),
-        ));
+        return Err(AppError::ValidationError(format!(
+            "Maximum {} documents per request",
+            max_docs
+        )));
     }
 
     let total_docs = request.documents.len();
@@ -76,43 +77,38 @@ pub async fn rerank_handler(
     let query = request.query.clone();
     let chunk_size = state.config.batch_size;
 
-    // Run CPU-bound work in blocking task pool with timeout
-    // Extended timeout for large requests (5 minutes)
-    let inference_timeout = Duration::from_secs(300);
-    let result = tokio::time::timeout(
-        inference_timeout,
-        tokio::task::spawn_blocking(move || {
-            let mut all_scores: Vec<f32> = Vec::with_capacity(documents.len());
+    // Run CPU-bound work in blocking task pool
+    // No timeout here - we must wait for completion to safely release the session.
+    // Backpressure is handled by the semaphore timeout above.
+    let result = tokio::task::spawn_blocking(move || {
+        let mut all_scores: Vec<f32> = Vec::with_capacity(documents.len());
 
-            // Process documents in batches for memory efficiency
-            for chunk in documents.chunks(chunk_size) {
-                // Tokenize this batch
-                let (input_ids, attention_mask, token_type_ids) =
-                    tokenizer.tokenize_pairs(&query, chunk)?;
+        // Process documents in batches for memory efficiency
+        for chunk in documents.chunks(chunk_size) {
+            // Tokenize this batch
+            let (input_ids, attention_mask, token_type_ids) =
+                tokenizer.tokenize_pairs(&query, chunk)?;
 
-                // Inference with pre-acquired session
-                let batch_scores = model.inference_with_session(
-                    session_idx,
-                    input_ids,
-                    attention_mask,
-                    token_type_ids,
-                )?;
+            // Inference with pre-acquired session
+            let batch_scores = model.inference_with_session(
+                session_idx,
+                input_ids,
+                attention_mask,
+                token_type_ids,
+            )?;
 
-                all_scores.extend(batch_scores);
-            }
+            all_scores.extend(batch_scores);
+        }
 
-            Ok::<Vec<f32>, AppError>(all_scores)
-        }),
-    )
+        Ok::<Vec<f32>, AppError>(all_scores)
+    })
     .await;
 
-    // Always release the session, even on timeout or error
+    // Release session only after blocking task completes (success or error)
     state.model.release_session(session_idx);
 
-    // Now handle the result
-    let scores = result
-        .map_err(|_| AppError::ResourceError("Inference timeout exceeded (30s)".to_string()))?
-        .map_err(|e| AppError::ModelError(format!("Task join error: {}", e)))??;
+    // Handle the result
+    let scores = result.map_err(|e| AppError::ModelError(format!("Task join error: {}", e)))??;
 
     // Apply sigmoid and create ranked results
     let mut results: Vec<RankedDocument> = scores

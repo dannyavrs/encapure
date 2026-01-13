@@ -16,7 +16,7 @@ import { Counter, Trend } from 'k6/metrics';
 
 // Configuration
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-const DOCS_COUNT = 1953;           // 1M tokens / 512 tokens per doc
+const DOCS_COUNT = 9765;           // 1953*5 = 9765 docs to reach ~5m tokens
 const TOKENS_PER_DOC = 512;
 const CHARS_PER_DOC = 2000;        // ~512 tokens (approx 4 chars per token)
 
