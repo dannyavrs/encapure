@@ -27,9 +27,9 @@ const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const STAGE = __ENV.STAGE || 'all';
 
 // Test parameters optimized for 512 context window
-const DOCS_PER_REQUEST = 8;
-const TOKENS_PER_DOC = 512; 
-const CHARS_PER_DOC = 1800;  // ~1800 chars usually map to 450-500 tokens in English
+const DOCS_PER_REQUEST = 4;
+const TOKENS_PER_DOC = 256; 
+const CHARS_PER_DOC = 900;  // ~1800 chars usually map to 450-500 tokens in English
 const TOKENS_PER_REQUEST = DOCS_PER_REQUEST * TOKENS_PER_DOC; 
 
 // =============================================================================

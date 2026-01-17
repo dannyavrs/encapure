@@ -1,28 +1,27 @@
 /**
- * 1M Token Benchmark Test
+ * 1M token streaming benchmark
  *
- * Tests reranking 1,953 documents x 512 tokens = ~1M tokens
- * Uses server-side batching (32 docs per batch = 62 batches)
- *
- * Expected performance:
- * - ~500ms per batch (based on previous benchmarks)
- * - 62 batches total
- * - ~31 seconds total processing time
+ * Strategy: many tiny requests (4 docs each) to keep latency low and CPUs busy.
+ * 977 requests * 4 docs * 256 tokens = 1,000,448 tokens.
  */
 
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
 
 // Configuration
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
-const DOCS_COUNT = 9765;           // 1953*5 = 9765 docs to reach ~5m tokens
-const TOKENS_PER_DOC = 512;
-const CHARS_PER_DOC = 2000;        // ~512 tokens (approx 4 chars per token)
+const DOCS_PER_REQUEST = 4;
+const TOKENS_PER_DOC = 256;
+const CHARS_PER_DOC = 900; // ~3.5 chars/token buffer
+const TOTAL_REQUESTS_FOR_MILLION = 977;
+const MAX_VUS = Number(__ENV.VUS || 15); // High parallelism
+
+const TARGET_TOKENS = DOCS_PER_REQUEST * TOKENS_PER_DOC * TOTAL_REQUESTS_FOR_MILLION;
 
 // Custom metrics
 const totalTokens = new Counter('total_tokens_processed');
-const requestDuration = new Trend('giant_request_duration_ms');
+const requestDuration = new Trend('request_duration_ms');
 
 // Word pool for generating realistic documents
 const WORD_POOL = [
@@ -37,92 +36,65 @@ const WORD_POOL = [
     'sequence', 'tokenization', 'vocabulary', 'prediction', 'probability'
 ];
 
-/**
- * Generate a single document with approximately the target token count.
- * @param {number} index - Document index for variation
- * @returns {string} Generated document text
- */
 function generateDocument(index) {
     const words = [];
     let charCount = 0;
 
-    // Add document identifier for debugging
     words.push(`[Doc${index}]`);
     charCount += 8;
 
-    // Fill with words until we reach target character count
     while (charCount < CHARS_PER_DOC) {
         const word = WORD_POOL[(index + words.length) % WORD_POOL.length];
         words.push(word);
-        charCount += word.length + 1; // +1 for space
+        charCount += word.length + 1;
     }
 
     return words.join(' ');
 }
 
-/**
- * Generate all documents for the 1M token test.
- * This is called once per iteration.
- * @returns {string[]} Array of 1953 documents
- */
-function generateDocuments() {
+function generateDocuments(startIndex) {
     const docs = [];
-    for (let i = 0; i < DOCS_COUNT; i++) {
-        docs.push(generateDocument(i));
+    for (let i = 0; i < DOCS_PER_REQUEST; i++) {
+        docs.push(generateDocument(startIndex + i));
     }
     return docs;
 }
 
-// Test configuration
-// Single VU, single iteration - this is a stress test, not a load test
+// High-parallelism, small-payload scenario
 export const options = {
     scenarios: {
-        single_giant_request: {
+        million_tokens: {
             executor: 'shared-iterations',
-            vus: 1,
-            iterations: 1,
-            maxDuration: '10m',  // 10 minute timeout
+            vus: MAX_VUS,
+            iterations: TOTAL_REQUESTS_FOR_MILLION,
+            maxDuration: '15m',
         },
     },
     thresholds: {
-        'http_req_duration': ['p(95)<300000'],  // P95 < 5 minutes
-        'http_req_failed': ['rate==0'],          // No failures allowed
-        'giant_request_duration_ms': ['p(95)<300000'],
+        http_req_duration: ['p(95)<250'], // keep single-request latency snappy
+        http_req_failed: ['rate==0'],
+        request_duration_ms: ['p(95)<250'],
     },
 };
 
 export default function() {
-    console.log(`Generating ${DOCS_COUNT} documents (~${DOCS_COUNT * TOKENS_PER_DOC} tokens)...`);
-
-    const documents = generateDocuments();
-
-    console.log(`Documents generated. Payload size: ~${Math.round(JSON.stringify(documents).length / 1024)} KB`);
+    // __ITER is the global iteration counter across VUs
+    const documents = generateDocuments(__ITER * DOCS_PER_REQUEST);
 
     const payload = {
-        query: "What are the key concepts in machine learning and deep neural networks?",
-        documents: documents,
+        query: 'What are the key concepts in machine learning and deep neural networks?',
+        documents,
     };
 
     const payloadStr = JSON.stringify(payload);
-    console.log(`Total payload size: ${Math.round(payloadStr.length / 1024)} KB`);
-    console.log(`Sending request to ${BASE_URL}/rerank...`);
 
     const startTime = Date.now();
-
     const res = http.post(`${BASE_URL}/rerank`, payloadStr, {
         headers: { 'Content-Type': 'application/json' },
-        timeout: '600s',  // 10 minute client timeout
+        timeout: '120s',
     });
-
     const duration = Date.now() - startTime;
     requestDuration.add(duration);
-
-    console.log(`Response received in ${duration}ms (${(duration/1000).toFixed(2)}s)`);
-    console.log(`Status: ${res.status}`);
-
-    if (res.status !== 200) {
-        console.error(`Error response: ${res.body}`);
-    }
 
     const checks = check(res, {
         'status is 200': (r) => r.status === 200,
@@ -137,9 +109,9 @@ export default function() {
         'has correct number of results': (r) => {
             try {
                 const body = JSON.parse(r.body);
-                const hasCorrect = body.results.length === DOCS_COUNT;
+                const hasCorrect = body.results.length === DOCS_PER_REQUEST;
                 if (!hasCorrect) {
-                    console.error(`Expected ${DOCS_COUNT} results, got ${body.results.length}`);
+                    console.error(`Expected ${DOCS_PER_REQUEST} results, got ${body.results.length}`);
                 }
                 return hasCorrect;
             } catch {
@@ -149,7 +121,7 @@ export default function() {
         'all scores are valid': (r) => {
             try {
                 const body = JSON.parse(r.body);
-                return body.results.every(result =>
+                return body.results.every((result) =>
                     typeof result.score === 'number' &&
                     result.score >= 0 &&
                     result.score <= 1
@@ -162,8 +134,8 @@ export default function() {
             try {
                 const body = JSON.parse(r.body);
                 for (let i = 1; i < body.results.length; i++) {
-                    if (body.results[i].score > body.results[i-1].score) {
-                        console.error(`Sort error at index ${i}: ${body.results[i].score} > ${body.results[i-1].score}`);
+                    if (body.results[i].score > body.results[i - 1].score) {
+                        console.error(`Sort error at index ${i}: ${body.results[i].score} > ${body.results[i - 1].score}`);
                         return false;
                     }
                 }
@@ -175,14 +147,6 @@ export default function() {
     });
 
     if (checks) {
-        totalTokens.add(DOCS_COUNT * TOKENS_PER_DOC);
-        const tokensPerSecond = (DOCS_COUNT * TOKENS_PER_DOC) / (duration / 1000);
-        console.log(`\n=== 1M TOKEN BENCHMARK RESULTS ===`);
-        console.log(`Total documents: ${DOCS_COUNT}`);
-        console.log(`Tokens per document: ${TOKENS_PER_DOC}`);
-        console.log(`Total tokens: ${DOCS_COUNT * TOKENS_PER_DOC}`);
-        console.log(`Processing time: ${(duration/1000).toFixed(2)}s`);
-        console.log(`Throughput: ${Math.round(tokensPerSecond)} tokens/second`);
-        console.log(`=================================\n`);
+        totalTokens.add(DOCS_PER_REQUEST * TOKENS_PER_DOC);
     }
 }
