@@ -20,6 +20,10 @@ pub enum AppError {
 
     #[error("Tokenization failed: {0}")]
     TokenizationError(String),
+
+    #[error("Atomization failed: {0}")]
+    #[allow(dead_code)] // Used in ingestion module, will have endpoint soon
+    AtomizerError(String),
 }
 
 #[derive(Serialize)]
@@ -46,6 +50,10 @@ impl IntoResponse for AppError {
             AppError::TokenizationError(msg) => {
                 tracing::error!(error = %msg, "Tokenization error");
                 (StatusCode::INTERNAL_SERVER_ERROR, msg.clone())
+            }
+            AppError::AtomizerError(msg) => {
+                tracing::warn!(error = %msg, "Atomizer error");
+                (StatusCode::BAD_REQUEST, msg.clone())
             }
         };
 
