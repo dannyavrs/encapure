@@ -1,0 +1,332 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "read_file",
+        "description": "Read the contents of a file at the specified path. Returns the file content as text.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "The file path to read" },
+            "encoding": { "type": "string", "description": "Text encoding (default: utf-8)" }
+          },
+          "required": ["path"]
+        }
+      },
+      {
+        "name": "write_file",
+        "description": "Write content to a file, creating it if necessary. Overwrites existing content.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "The file path to write to" },
+            "content": { "type": "string", "description": "The content to write" },
+            "append": { "type": "boolean", "description": "Append instead of overwrite" }
+          },
+          "required": ["path", "content"]
+        }
+      },
+      {
+        "name": "search_files",
+        "description": "Search for files matching a pattern in a directory. Supports glob patterns and recursive search.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "directory": { "type": "string", "description": "Directory to search in" },
+            "pattern": { "type": "string", "description": "Search pattern (glob or regex)" },
+            "recursive": { "type": "boolean", "description": "Search subdirectories" }
+          },
+          "required": ["directory", "pattern"]
+        }
+      },
+      {
+        "name": "file_metadata",
+        "description": "Get metadata about a file including size, permissions, timestamps, and type.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "The file path to inspect" }
+          },
+          "required": ["path"]
+        }
+      },
+      {
+        "name": "list_directory",
+        "description": "List contents of a directory including files and subdirectories.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "Directory path to list" },
+            "show_hidden": { "type": "boolean", "description": "Include hidden files" }
+          },
+          "required": ["path"]
+        }
+      },
+      {
+        "name": "send_slack_message",
+        "description": "Send a message to a Slack channel or direct message to a user.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "channel": { "type": "string", "description": "Channel name or user ID" },
+            "message": { "type": "string", "description": "Message text to send" },
+            "thread_ts": { "type": "string", "description": "Thread timestamp for replies" }
+          },
+          "required": ["channel", "message"]
+        }
+      },
+      {
+        "name": "search_slack_history",
+        "description": "Search message history in Slack channels for specific content or keywords.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string", "description": "Search query text" },
+            "channel": { "type": "string", "description": "Limit search to channel" },
+            "from_user": { "type": "string", "description": "Filter by sender" }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "email_send",
+        "description": "Send an email to one or more recipients with subject and body.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "to": { "type": "array", "items": { "type": "string" }, "description": "Recipient email addresses" },
+            "subject": { "type": "string", "description": "Email subject line" },
+            "body": { "type": "string", "description": "Email body content" },
+            "cc": { "type": "array", "items": { "type": "string" }, "description": "CC recipients" }
+          },
+          "required": ["to", "subject", "body"]
+        }
+      },
+      {
+        "name": "email_search",
+        "description": "Search emails by subject, sender, content, or date range.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string", "description": "Search query" },
+            "folder": { "type": "string", "description": "Email folder to search" },
+            "from_date": { "type": "string", "description": "Start date filter" }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "notify_team",
+        "description": "Send notifications to team members via their preferred communication channel.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "team": { "type": "string", "description": "Team name or ID" },
+            "message": { "type": "string", "description": "Notification message" },
+            "priority": { "type": "string", "description": "Notification priority level" }
+          },
+          "required": ["team", "message"]
+        }
+      },
+      {
+        "name": "jira_create_ticket",
+        "description": "Create a new Jira issue or ticket with summary, description, and type.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project": { "type": "string", "description": "Jira project key" },
+            "summary": { "type": "string", "description": "Issue summary/title" },
+            "description": { "type": "string", "description": "Issue description" },
+            "issue_type": { "type": "string", "description": "Type: Bug, Story, Task" }
+          },
+          "required": ["project", "summary", "issue_type"]
+        }
+      },
+      {
+        "name": "jira_search_issues",
+        "description": "Search for Jira issues using JQL query language. Find bugs, stories, and tasks.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "jql": { "type": "string", "description": "JQL query string" },
+            "max_results": { "type": "integer", "description": "Maximum results to return" },
+            "fields": { "type": "array", "items": { "type": "string" }, "description": "Fields to include" }
+          },
+          "required": ["jql"]
+        }
+      },
+      {
+        "name": "github_open_issue",
+        "description": "Open a new issue on a GitHub repository with title, body, and labels.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "repo": { "type": "string", "description": "Repository in owner/repo format" },
+            "title": { "type": "string", "description": "Issue title" },
+            "body": { "type": "string", "description": "Issue body/description" },
+            "labels": { "type": "array", "items": { "type": "string" }, "description": "Labels to apply" }
+          },
+          "required": ["repo", "title"]
+        }
+      },
+      {
+        "name": "github_search_issues",
+        "description": "Search GitHub issues and pull requests across repositories.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string", "description": "Search query" },
+            "repo": { "type": "string", "description": "Limit to repository" },
+            "state": { "type": "string", "description": "Filter by state: open, closed, all" }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "update_task_status",
+        "description": "Update the status of a project task or work item.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "task_id": { "type": "string", "description": "Task identifier" },
+            "status": { "type": "string", "description": "New status value" },
+            "comment": { "type": "string", "description": "Status change comment" }
+          },
+          "required": ["task_id", "status"]
+        }
+      },
+      {
+        "name": "aws_list_instances",
+        "description": "List EC2 instances and their status in AWS. Shows instance ID, state, type, and IPs.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "region": { "type": "string", "description": "AWS region" },
+            "filters": { "type": "object", "description": "Instance filters" },
+            "instance_ids": { "type": "array", "items": { "type": "string" }, "description": "Specific instance IDs" }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "k8s_get_pods",
+        "description": "Get running pods in a Kubernetes cluster. Shows pod status, containers, and health.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "namespace": { "type": "string", "description": "Kubernetes namespace" },
+            "label_selector": { "type": "string", "description": "Label selector filter" },
+            "field_selector": { "type": "string", "description": "Field selector filter" }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "check_service_health",
+        "description": "Check if a service is running and healthy. Performs health check on endpoints.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "service_name": { "type": "string", "description": "Name of the service" },
+            "endpoint": { "type": "string", "description": "Health check endpoint URL" },
+            "timeout": { "type": "integer", "description": "Timeout in seconds" }
+          },
+          "required": ["service_name"]
+        }
+      },
+      {
+        "name": "get_server_metrics",
+        "description": "Retrieve CPU, memory, disk, and network metrics from servers.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "server": { "type": "string", "description": "Server hostname or IP" },
+            "metrics": { "type": "array", "items": { "type": "string" }, "description": "Metrics to collect" },
+            "time_range": { "type": "string", "description": "Time range for metrics" }
+          },
+          "required": ["server"]
+        }
+      },
+      {
+        "name": "deploy_application",
+        "description": "Deploy an application to the specified environment. Supports rolling and blue-green deployments.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "application": { "type": "string", "description": "Application name" },
+            "environment": { "type": "string", "description": "Target environment" },
+            "version": { "type": "string", "description": "Version to deploy" },
+            "strategy": { "type": "string", "description": "Deployment strategy" }
+          },
+          "required": ["application", "environment", "version"]
+        }
+      },
+      {
+        "name": "query_database",
+        "description": "Execute a SQL query against the database and return results.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string", "description": "SQL query to execute" },
+            "database": { "type": "string", "description": "Database name" },
+            "params": { "type": "array", "description": "Query parameters" }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "backup_database",
+        "description": "Create a backup of the database to the specified location.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "database": { "type": "string", "description": "Database to backup" },
+            "destination": { "type": "string", "description": "Backup destination path" },
+            "compression": { "type": "boolean", "description": "Enable compression" }
+          },
+          "required": ["database", "destination"]
+        }
+      },
+      {
+        "name": "list_tables",
+        "description": "List all tables in the database with their schemas and row counts.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "database": { "type": "string", "description": "Database name" },
+            "schema": { "type": "string", "description": "Schema filter" }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "get_record",
+        "description": "Retrieve a specific record by its unique identifier from the database.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "table": { "type": "string", "description": "Table name" },
+            "id": { "type": "string", "description": "Record ID" },
+            "fields": { "type": "array", "items": { "type": "string" }, "description": "Fields to return" }
+          },
+          "required": ["table", "id"]
+        }
+      },
+      {
+        "name": "update_record",
+        "description": "Update a record in the database with new values.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "table": { "type": "string", "description": "Table name" },
+            "id": { "type": "string", "description": "Record ID to update" },
+            "data": { "type": "object", "description": "Fields and values to update" }
+          },
+          "required": ["table", "id", "data"]
+        }
+      }
+    ]
+  }
+}

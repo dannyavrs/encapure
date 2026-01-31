@@ -6,5 +6,5 @@
 pub mod atomizer;
 pub mod types;
 
-pub use atomizer::{atomize_tools, AtomizerResult};
+pub use atomizer::atomize_tools;
 pub use types::EncapureTool;

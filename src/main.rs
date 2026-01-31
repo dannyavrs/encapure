@@ -2,10 +2,11 @@ mod config;
 mod error;
 mod handlers;
 mod inference;
+mod ingestion;
 mod state;
 
 use crate::config::Config;
-use crate::handlers::{health_handler, ready_handler, rerank_handler};
+use crate::handlers::{health_handler, ready_handler, rerank_handler, search_handler};
 use crate::state::AppState;
 
 use axum::{
@@ -62,6 +63,8 @@ async fn main() -> anyhow::Result<()> {
             "/rerank",
             post(rerank_handler).layer(DefaultBodyLimit::max(50 * 1024 * 1024)),
         )
+        // Semantic search endpoint
+        .route("/search", post(search_handler))
         // Health endpoints
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))

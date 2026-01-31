@@ -13,7 +13,7 @@ pub mod state;
 // Re-export key types for convenience
 pub use config::Config;
 pub use error::{AppError, Result};
-pub use handlers::{health_handler, ready_handler, rerank_handler};
-pub use inference::{RerankerModel, TokenizerWrapper};
+pub use handlers::{health_handler, ready_handler, rerank_handler, search_handler};
+pub use inference::{BiEncoderModel, RerankerModel, TokenizerWrapper};
 pub use ingestion::{atomize_tools, EncapureTool};
 pub use state::AppState;

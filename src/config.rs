@@ -14,6 +14,18 @@ pub struct Config {
     pub max_documents: usize,
     /// Batch size for internal chunking during inference.
     pub batch_size: usize,
+    /// Optional path to tools JSON file for semantic routing.
+    pub tools_path: Option<PathBuf>,
+    /// Path to bi-encoder ONNX model for fast semantic search.
+    pub bi_encoder_model_path: PathBuf,
+    /// Path to bi-encoder tokenizer.
+    pub bi_encoder_tokenizer_path: PathBuf,
+    /// Number of candidates to retrieve in first-stage (bi-encoder) before reranking.
+    pub retrieval_candidates: usize,
+    /// Number of threads per ONNX session for intra-op parallelism.
+    /// Higher = faster single-request batches, but more CPU contention under load.
+    /// Default: 4 (good for batch processing in /search)
+    pub intra_threads: usize,
 }
 
 impl Config {
@@ -26,7 +38,7 @@ impl Config {
                 .parse()?,
             model_path: PathBuf::from(
                 env::var("MODEL_PATH")
-                    .unwrap_or_else(|_| "./models/model_quint8_avx2.onnx".to_string()),
+                    .unwrap_or_else(|_| "./models/model_int8.onnx".to_string()),
             ),
             tokenizer_path: PathBuf::from(
                 env::var("TOKENIZER_PATH")
@@ -44,6 +56,21 @@ impl Config {
                 .parse()?,
             batch_size: env::var("BATCH_SIZE")
                 .unwrap_or_else(|_| "32".to_string())
+                .parse()?,
+            tools_path: env::var("TOOLS_PATH").ok().map(PathBuf::from),
+            bi_encoder_model_path: PathBuf::from(
+                env::var("BI_ENCODER_MODEL_PATH")
+                    .unwrap_or_else(|_| "./bi-encoder-model/model_int8.onnx".to_string()),
+            ),
+            bi_encoder_tokenizer_path: PathBuf::from(
+                env::var("BI_ENCODER_TOKENIZER_PATH")
+                    .unwrap_or_else(|_| "./bi-encoder-model/tokenizerbiencoder.json".to_string()),
+            ),
+            retrieval_candidates: env::var("RETRIEVAL_CANDIDATES")
+                .unwrap_or_else(|_| "8".to_string())
+                .parse()?,
+            intra_threads: env::var("INTRA_THREADS")
+                .unwrap_or_else(|_| "4".to_string())
                 .parse()?,
         })
     }
