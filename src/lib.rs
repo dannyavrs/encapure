@@ -8,6 +8,7 @@ pub mod error;
 pub mod handlers;
 pub mod inference;
 pub mod ingestion;
+pub mod persistence;
 pub mod state;
 
 // Re-export key types for convenience

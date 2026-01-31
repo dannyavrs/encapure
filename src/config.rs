@@ -23,9 +23,14 @@ pub struct Config {
     /// Number of candidates to retrieve in first-stage (bi-encoder) before reranking.
     pub retrieval_candidates: usize,
     /// Number of threads per ONNX session for intra-op parallelism.
-    /// Higher = faster single-request batches, but more CPU contention under load.
-    /// Default: 4 (good for batch processing in /search)
+    /// Default: 2. Formula: permits × intra_threads ≤ physical_cores
     pub intra_threads: usize,
+    /// Optional override for semaphore permits. If None, auto-calculated as:
+    /// physical_cores / intra_threads (ensures no CPU oversubscription)
+    pub permits: Option<usize>,
+    /// Path to embeddings cache file. Pre-computed embeddings are stored here
+    /// to avoid loading the bi-encoder model at runtime.
+    pub embeddings_cache_path: PathBuf,
 }
 
 impl Config {
@@ -37,8 +42,7 @@ impl Config {
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()?,
             model_path: PathBuf::from(
-                env::var("MODEL_PATH")
-                    .unwrap_or_else(|_| "./models/model_int8.onnx".to_string()),
+                env::var("MODEL_PATH").unwrap_or_else(|_| "./models/model_int8.onnx".to_string()),
             ),
             tokenizer_path: PathBuf::from(
                 env::var("TOKENIZER_PATH")
@@ -67,11 +71,16 @@ impl Config {
                     .unwrap_or_else(|_| "./bi-encoder-model/tokenizerbiencoder.json".to_string()),
             ),
             retrieval_candidates: env::var("RETRIEVAL_CANDIDATES")
-                .unwrap_or_else(|_| "8".to_string())
+                .unwrap_or_else(|_| "5".to_string())
                 .parse()?,
             intra_threads: env::var("INTRA_THREADS")
-                .unwrap_or_else(|_| "4".to_string())
+                .unwrap_or_else(|_| "2".to_string())
                 .parse()?,
+            permits: env::var("PERMITS").ok().and_then(|s| s.parse().ok()),
+            embeddings_cache_path: PathBuf::from(
+                env::var("EMBEDDINGS_CACHE_PATH")
+                    .unwrap_or_else(|_| ".encapure/embeddings.bin".to_string()),
+            ),
         })
     }
 }

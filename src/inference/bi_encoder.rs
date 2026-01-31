@@ -3,81 +3,153 @@
 //! Uses BAAI/bge-base-en-v1.5 to produce 768-dimensional embeddings.
 //! Unlike the cross-encoder (reranker), the bi-encoder encodes query and documents
 //! independently, enabling pre-computation of document embeddings.
+//!
+//! # Session Pool Architecture
+//! Like the reranker, the bi-encoder uses a session pool with lock-free queue
+//! to enable concurrent query encoding without Mutex serialization.
 
 use crate::error::{AppError, Result};
+use crossbeam::queue::ArrayQueue;
 use ndarray::{Array1, Array2};
 use ort::{
     session::{builder::GraphOptimizationLevel, Session},
     value::Tensor,
 };
+use std::cell::UnsafeCell;
 use std::path::Path;
+use std::sync::Arc;
 use tokenizers::Tokenizer;
 
-/// Bi-encoder model for generating text embeddings.
+/// Bi-encoder model pool for generating text embeddings with concurrent access.
 ///
 /// # Design
 /// The bi-encoder produces fixed-size embeddings (768-dim for BGE-base) that can be
 /// compared via cosine similarity. This enables:
 /// 1. Pre-computing document embeddings at startup
 /// 2. Fast similarity search via vector operations (no model inference for docs)
+///
+/// # Session Pool
+/// Uses the same lock-free pool pattern as RerankerModel to avoid Mutex serialization.
+/// Each concurrent request acquires its own session for exclusive use.
 pub struct BiEncoderModel {
-    session: Session,
+    /// Pool of ONNX sessions - exclusive access guaranteed by ArrayQueue
+    sessions: Vec<UnsafeCell<Session>>,
+    /// Lock-free queue of available session indices
+    available: Arc<ArrayQueue<usize>>,
+    /// Shared tokenizer (thread-safe for encode operations)
     tokenizer: Tokenizer,
     max_length: usize,
     embedding_dim: usize,
 }
 
 impl BiEncoderModel {
-    /// Load bi-encoder model and tokenizer.
+    /// Load a pool of bi-encoder sessions.
     ///
     /// # Arguments
     /// * `model_path` - Path to the ONNX model file
     /// * `tokenizer_path` - Path to the tokenizer JSON file
     /// * `max_length` - Maximum sequence length (512 for BGE-base)
-    pub fn load(model_path: &Path, tokenizer_path: &Path, max_length: usize) -> Result<Self> {
-        // Load tokenizer
+    /// * `pool_size` - Number of sessions to create
+    /// * `intra_threads` - Threads per session for intra-op parallelism
+    pub fn load_pool(
+        model_path: &Path,
+        tokenizer_path: &Path,
+        max_length: usize,
+        pool_size: usize,
+        intra_threads: usize,
+    ) -> Result<Self> {
+        // Load tokenizer (shared across all sessions)
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| AppError::ModelError(format!("Failed to load bi-encoder tokenizer: {}", e)))?;
 
-        // Load ONNX session with optimizations
-        let session = Session::builder()
-            .map_err(|e| AppError::ModelError(e.to_string()))?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(|e| AppError::ModelError(e.to_string()))?
-            .with_intra_threads(1)
-            .map_err(|e| AppError::ModelError(e.to_string()))?
-            .commit_from_file(model_path)
-            .map_err(|e| AppError::ModelError(format!("Failed to load bi-encoder model: {}", e)))?;
+        // Read model file once
+        let model_bytes = std::fs::read(model_path)
+            .map_err(|e| AppError::ModelError(format!("Failed to read bi-encoder model: {}", e)))?;
+
+        // Create pool of sessions
+        let mut sessions = Vec::with_capacity(pool_size);
+        let available = Arc::new(ArrayQueue::new(pool_size));
+
+        for i in 0..pool_size {
+            let session = Session::builder()
+                .map_err(|e| AppError::ModelError(e.to_string()))?
+                .with_optimization_level(GraphOptimizationLevel::Level3)
+                .map_err(|e| AppError::ModelError(e.to_string()))?
+                .with_intra_threads(intra_threads)
+                .map_err(|e| AppError::ModelError(e.to_string()))?
+                .with_inter_threads(1)
+                .map_err(|e| AppError::ModelError(e.to_string()))?
+                .commit_from_memory(&model_bytes)
+                .map_err(|e: ort::Error| AppError::ModelError(e.to_string()))?;
+
+            sessions.push(UnsafeCell::new(session));
+            available
+                .push(i)
+                .map_err(|_| AppError::ModelError("Failed to initialize bi-encoder session pool".into()))?;
+        }
 
         tracing::info!(
             model = %model_path.display(),
             tokenizer = %tokenizer_path.display(),
+            pool_size,
+            intra_threads,
             max_length,
-            "Bi-encoder model loaded"
+            "Bi-encoder session pool loaded"
         );
 
         Ok(Self {
-            session,
+            sessions,
+            available,
             tokenizer,
             max_length,
             embedding_dim: 768, // BGE-base embedding dimension
         })
     }
 
-    /// Encode a single text into an embedding vector.
+    /// Legacy single-session load (for batch encoding at startup).
+    ///
+    /// Creates a pool of size 1 with specified intra_threads.
+    pub fn load(model_path: &Path, tokenizer_path: &Path, max_length: usize) -> Result<Self> {
+        // For startup batch encoding, use a single session with more threads
+        Self::load_pool(model_path, tokenizer_path, max_length, 1, 4)
+    }
+
+    /// Acquire a session from the pool for exclusive use.
+    ///
+    /// Returns the session index, which MUST be released via `release_session()`.
+    pub fn acquire_session(&self) -> Result<usize> {
+        self.available
+            .pop()
+            .ok_or_else(|| AppError::ResourceError("No available bi-encoder sessions".into()))
+    }
+
+    /// Release a session back to the pool.
+    pub fn release_session(&self, index: usize) {
+        let _ = self.available.push(index);
+    }
+
+    /// Encode a single text into an embedding vector using a specific session.
     ///
     /// Uses mean pooling over token embeddings (excluding padding).
-    pub fn encode(&mut self, text: &str) -> Result<Array1<f32>> {
+    pub fn encode_with_session(&self, session_idx: usize, text: &str) -> Result<Array1<f32>> {
         let texts = vec![text.to_string()];
-        let embeddings = self.encode_batch(&texts)?;
+        let embeddings = self.encode_batch_with_session(session_idx, &texts)?;
         Ok(embeddings.row(0).to_owned())
     }
 
-    /// Encode a batch of texts into embedding vectors.
+    /// Encode a single text (convenience method that acquires/releases session automatically).
+    pub fn encode(&self, text: &str) -> Result<Array1<f32>> {
+        let session_idx = self.acquire_session()?;
+        let result = self.encode_with_session(session_idx, text);
+        self.release_session(session_idx);
+        result
+    }
+
+    /// Encode a batch of texts using a specific session.
     ///
     /// # Returns
     /// Array2<f32> of shape (batch_size, embedding_dim)
-    pub fn encode_batch(&mut self, texts: &[String]) -> Result<Array2<f32>> {
+    pub fn encode_batch_with_session(&self, session_idx: usize, texts: &[String]) -> Result<Array2<f32>> {
         if texts.is_empty() {
             return Ok(Array2::zeros((0, self.embedding_dim)));
         }
@@ -122,9 +194,11 @@ impl BiEncoderModel {
         let token_type_ids_tensor = Tensor::from_array((shape, token_type_ids))
             .map_err(|e| AppError::ModelError(e.to_string()))?;
 
+        // SAFETY: ArrayQueue guarantees exclusive access to this index.
+        let session = unsafe { &mut *self.sessions[session_idx].get() };
+
         // Run inference
-        let outputs = self
-            .session
+        let outputs = session
             .run(ort::inputs![
                 "input_ids" => input_ids_tensor,
                 "attention_mask" => attention_mask_tensor,
@@ -180,6 +254,14 @@ impl BiEncoderModel {
         Ok(embeddings)
     }
 
+    /// Encode a batch of texts (convenience method that acquires/releases session automatically).
+    pub fn encode_batch(&self, texts: &[String]) -> Result<Array2<f32>> {
+        let session_idx = self.acquire_session()?;
+        let result = self.encode_batch_with_session(session_idx, texts);
+        self.release_session(session_idx);
+        result
+    }
+
     /// Compute cosine similarity between a query embedding and multiple document embeddings.
     ///
     /// # Arguments
@@ -199,3 +281,12 @@ impl BiEncoderModel {
             .collect()
     }
 }
+
+// SAFETY: BiEncoderModel is Send + Sync because:
+// - ArrayQueue is lock-free and thread-safe (crossbeam guarantee)
+// - ArrayQueue::pop() returns each index to at most one caller at a time
+// - ArrayQueue::push() returns the index to the pool for reuse
+// - Between pop and push, only one thread can access each UnsafeCell<Session>
+// - Tokenizer's encode methods are thread-safe
+unsafe impl Send for BiEncoderModel {}
+unsafe impl Sync for BiEncoderModel {}

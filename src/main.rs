@@ -3,6 +3,7 @@ mod error;
 mod handlers;
 mod inference;
 mod ingestion;
+mod persistence;
 mod state;
 
 use crate::config::Config;

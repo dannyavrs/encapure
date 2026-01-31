@@ -91,17 +91,17 @@ pub async fn search_handler(
     // =========================================================================
     // STAGE 1: Bi-encoder fast retrieval (cosine similarity)
     // =========================================================================
+
+    // Acquire bi-encoder session BEFORE spawn_blocking (lock-free pool access)
+    let bi_encoder_session_idx = state.bi_encoder.acquire_session()?;
+
     let bi_encoder = Arc::clone(&state.bi_encoder);
     let tool_embeddings = Arc::clone(&state.tool_embeddings);
     let query_for_biencoder = request.query.clone();
 
     // Compute query embedding (fast - single forward pass)
     let stage1_result = tokio::task::spawn_blocking(move || {
-        let mut encoder = bi_encoder
-            .lock()
-            .map_err(|_| AppError::ResourceError("Bi-encoder lock poisoned".to_string()))?;
-
-        let query_embedding = encoder.encode(&query_for_biencoder)?;
+        let query_embedding = bi_encoder.encode_with_session(bi_encoder_session_idx, &query_for_biencoder)?;
 
         // Compute cosine similarities with all pre-computed tool embeddings
         let similarities = BiEncoderModel::cosine_similarity(&query_embedding, &tool_embeddings);
@@ -119,8 +119,14 @@ pub async fn search_handler(
 
         Ok::<Vec<usize>, AppError>(candidates)
     })
-    .await
-    .map_err(|e| AppError::ModelError(format!("Stage 1 task join error: {}", e)))??;
+    .await;
+
+    // Release bi-encoder session after blocking task completes
+    state.bi_encoder.release_session(bi_encoder_session_idx);
+
+    // Handle the result
+    let stage1_result = stage1_result
+        .map_err(|e| AppError::ModelError(format!("Stage 1 task join error: {}", e)))??;
 
     let stage1_time = start_time.elapsed();
     tracing::debug!(
