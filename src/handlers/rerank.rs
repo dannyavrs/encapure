@@ -86,7 +86,7 @@ pub async fn rerank_handler(
         // Process documents in batches for memory efficiency
         for chunk in documents.chunks(chunk_size) {
             // Tokenize this batch
-            let (input_ids, attention_mask, token_type_ids) =
+            let (input_ids, attention_mask, _token_type_ids) =
                 tokenizer.tokenize_pairs(&query, chunk)?;
 
             // Inference with pre-acquired session
@@ -94,7 +94,6 @@ pub async fn rerank_handler(
                 session_idx,
                 input_ids,
                 attention_mask,
-                token_type_ids,
             )?;
 
             all_scores.extend(batch_scores);

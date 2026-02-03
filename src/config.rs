@@ -1,6 +1,34 @@
 use std::env;
 use std::path::PathBuf;
 
+/// Operating mode for Encapure server.
+/// Controls pool_size, permits, and intra_threads settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperatingMode {
+    /// Optimized for single requests with low latency.
+    /// pool_size=1, permits=1, intra_threads=8
+    Single,
+    /// Optimized for concurrent requests with high throughput.
+    /// pool_size=10, permits=6, intra_threads=2
+    Concurrent,
+    /// Use individual environment variable settings.
+    Custom,
+}
+
+impl OperatingMode {
+    pub fn from_env() -> Self {
+        match env::var("ENCAPURE_MODE")
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str()
+        {
+            "single" | "low-latency" | "single-request" => Self::Single,
+            "concurrent" | "high-throughput" | "multi" => Self::Concurrent,
+            _ => Self::Custom,
+        }
+    }
+}
+
 pub struct Config {
     pub host: String,
     pub port: u16,
@@ -23,7 +51,8 @@ pub struct Config {
     /// Number of candidates to retrieve in first-stage (bi-encoder) before reranking.
     pub retrieval_candidates: usize,
     /// Number of threads per ONNX session for intra-op parallelism.
-    /// Default: 2. Formula: permits × intra_threads ≤ physical_cores
+    /// Default: 8. Higher values improve single-request latency at the cost of concurrency.
+    /// Formula: permits × intra_threads ≤ physical_cores
     pub intra_threads: usize,
     /// Optional override for semaphore permits. If None, auto-calculated as:
     /// physical_cores / intra_threads (ensures no CPU oversubscription)
@@ -35,7 +64,35 @@ pub struct Config {
 
 impl Config {
     /// Load configuration from environment variables with sensible defaults.
+    ///
+    /// The `ENCAPURE_MODE` environment variable controls preset configurations:
+    /// - `single` / `low-latency`: Optimized for single requests (pool=1, permits=1, intra_threads=8)
+    /// - `concurrent` / `high-throughput`: Optimized for concurrent requests (pool=10, permits=6, intra_threads=2)
+    /// - Unset or other: Uses individual env vars or defaults
     pub fn from_env() -> anyhow::Result<Self> {
+        let mode = OperatingMode::from_env();
+
+        // Determine pool_size, permits, intra_threads based on mode
+        let (pool_size, permits, intra_threads) = match mode {
+            OperatingMode::Single => {
+                // Low latency: single session uses all threads
+                (Some(1), Some(1), 8)
+            }
+            OperatingMode::Concurrent => {
+                // High throughput: multiple sessions with fewer threads each
+                (Some(10), Some(6), 2)
+            }
+            OperatingMode::Custom => {
+                // Use individual env vars or defaults
+                let pool = env::var("POOL_SIZE").ok().and_then(|s| s.parse().ok());
+                let perm = env::var("PERMITS").ok().and_then(|s| s.parse().ok());
+                let threads = env::var("INTRA_THREADS")
+                    .unwrap_or_else(|_| "8".to_string())
+                    .parse()?;
+                (pool, perm, threads)
+            }
+        };
+
         Ok(Self {
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PORT")
@@ -54,7 +111,7 @@ impl Config {
             shutdown_timeout_secs: env::var("SHUTDOWN_TIMEOUT")
                 .unwrap_or_else(|_| "30".to_string())
                 .parse()?,
-            pool_size: env::var("POOL_SIZE").ok().and_then(|s| s.parse().ok()),
+            pool_size,
             max_documents: env::var("MAX_DOCUMENTS")
                 .unwrap_or_else(|_| "100000".to_string())
                 .parse()?,
@@ -71,16 +128,19 @@ impl Config {
                     .unwrap_or_else(|_| "./bi-encoder-model/tokenizerbiencoder.json".to_string()),
             ),
             retrieval_candidates: env::var("RETRIEVAL_CANDIDATES")
-                .unwrap_or_else(|_| "5".to_string())
+                .unwrap_or_else(|_| "20".to_string())
                 .parse()?,
-            intra_threads: env::var("INTRA_THREADS")
-                .unwrap_or_else(|_| "2".to_string())
-                .parse()?,
-            permits: env::var("PERMITS").ok().and_then(|s| s.parse().ok()),
+            intra_threads,
+            permits,
             embeddings_cache_path: PathBuf::from(
                 env::var("EMBEDDINGS_CACHE_PATH")
                     .unwrap_or_else(|_| ".encapure/embeddings.bin".to_string()),
             ),
         })
+    }
+
+    /// Returns the operating mode based on current configuration.
+    pub fn mode(&self) -> OperatingMode {
+        OperatingMode::from_env()
     }
 }

@@ -1,0 +1,405 @@
+{
+  "description": "Accuracy test cases for Encapure context-aware search",
+  "test_cases": [
+    {
+      "id": 1,
+      "category": "context_switching",
+      "query": "send message",
+      "agent_description": null,
+      "expected_tools": ["send_message", "send_sms", "send_notification"],
+      "description": "Generic message without context"
+    },
+    {
+      "id": 2,
+      "category": "context_switching",
+      "query": "send message",
+      "agent_description": "Slack communication bot for workplace chat",
+      "expected_tools": ["send_slack_message", "send_slack_dm", "post_slack_message"],
+      "description": "Message with Slack context"
+    },
+    {
+      "id": 3,
+      "category": "context_switching",
+      "query": "send message",
+      "agent_description": "Email automation assistant for newsletters",
+      "expected_tools": ["send_email", "send_email_notification", "send_html_email"],
+      "description": "Message with Email context"
+    },
+    {
+      "id": 4,
+      "category": "context_switching",
+      "query": "send message",
+      "agent_description": "Microsoft Teams bot for enterprise collaboration",
+      "expected_tools": ["send_teams_message", "send_teams_chat", "send_teams_channel_message"],
+      "description": "Message with Teams context"
+    },
+    {
+      "id": 5,
+      "category": "context_switching",
+      "query": "send message",
+      "agent_description": "Discord community manager bot",
+      "expected_tools": ["send_discord_message", "send_discord_dm", "send_discord_embed"],
+      "description": "Message with Discord context"
+    },
+    {
+      "id": 6,
+      "category": "context_switching",
+      "query": "create file",
+      "agent_description": null,
+      "expected_tools": ["create_file", "write_file", "write_text_file"],
+      "description": "Generic file creation"
+    },
+    {
+      "id": 7,
+      "category": "context_switching",
+      "query": "upload file",
+      "agent_description": "AWS S3 storage manager",
+      "expected_tools": ["aws_s3_upload_file", "aws_s3_copy_object"],
+      "description": "File upload in S3 context"
+    },
+    {
+      "id": 8,
+      "category": "context_switching",
+      "query": "upload file",
+      "agent_description": "Google Cloud Storage operator",
+      "expected_tools": ["gcp_upload_to_gcs", "gcp_download_from_gcs"],
+      "description": "File upload in GCS context"
+    },
+    {
+      "id": 9,
+      "category": "devops_context",
+      "query": "create server",
+      "agent_description": "AWS cloud infrastructure bot",
+      "expected_tools": ["aws_create_instance", "aws_start_instance"],
+      "description": "AWS server creation"
+    },
+    {
+      "id": 10,
+      "category": "devops_context",
+      "query": "create server",
+      "agent_description": "Azure cloud management assistant",
+      "expected_tools": ["azure_create_vm", "azure_start_vm"],
+      "description": "Azure VM creation"
+    },
+    {
+      "id": 11,
+      "category": "devops_context",
+      "query": "create server",
+      "agent_description": "GCP compute engine operator",
+      "expected_tools": ["gcp_create_instance", "gcp_start_instance"],
+      "description": "GCP instance creation"
+    },
+    {
+      "id": 12,
+      "category": "devops_context",
+      "query": "deploy application",
+      "agent_description": "Kubernetes cluster operator",
+      "expected_tools": ["k8s_apply_manifest", "deploy_container", "k8s_rollout_restart"],
+      "description": "K8s deployment"
+    },
+    {
+      "id": 13,
+      "category": "devops_context",
+      "query": "deploy application",
+      "agent_description": "Docker container management",
+      "expected_tools": ["docker_start_container", "docker_compose_up", "deploy_container"],
+      "description": "Docker deployment"
+    },
+    {
+      "id": 14,
+      "category": "devops_context",
+      "query": "get instance status",
+      "agent_description": "AWS infrastructure monitoring",
+      "expected_tools": ["aws_describe_instance", "aws_get_instance", "aws_get_instance_status"],
+      "description": "AWS status check"
+    },
+    {
+      "id": 15,
+      "category": "devops_context",
+      "query": "get pods",
+      "agent_description": "Kubernetes monitoring agent",
+      "expected_tools": ["k8s_get_pods", "k8s_list_pods", "k8s_describe_pod"],
+      "description": "K8s pod status"
+    },
+    {
+      "id": 16,
+      "category": "devops_context",
+      "query": "scale deployment",
+      "agent_description": "Kubernetes autoscaling manager",
+      "expected_tools": ["k8s_scale_deployment", "k8s_rollout_restart"],
+      "description": "K8s scaling"
+    },
+    {
+      "id": 17,
+      "category": "devops_context",
+      "query": "build image",
+      "agent_description": "Docker CI/CD pipeline",
+      "expected_tools": ["docker_build_image", "docker_push_image", "docker_tag_image"],
+      "description": "Docker image build"
+    },
+    {
+      "id": 18,
+      "category": "devops_context",
+      "query": "invoke function",
+      "agent_description": "AWS Lambda serverless manager",
+      "expected_tools": ["aws_lambda_invoke", "aws_lambda_get_function"],
+      "description": "Lambda invocation"
+    },
+    {
+      "id": 19,
+      "category": "project_management",
+      "query": "create task",
+      "agent_description": "Jira project management assistant",
+      "expected_tools": ["jira_create_task", "jira_create_issue", "jira_create_subtask"],
+      "description": "Jira task creation"
+    },
+    {
+      "id": 20,
+      "category": "project_management",
+      "query": "create task",
+      "agent_description": "Asana productivity assistant",
+      "expected_tools": ["asana_create_task", "asana_create_subtask", "asana_create_project"],
+      "description": "Asana task creation"
+    },
+    {
+      "id": 21,
+      "category": "project_management",
+      "query": "create card",
+      "agent_description": "Trello board management bot",
+      "expected_tools": ["trello_create_card", "trello_create_list", "trello_create_board"],
+      "description": "Trello card creation"
+    },
+    {
+      "id": 22,
+      "category": "project_management",
+      "query": "create issue",
+      "agent_description": "Linear issue tracking assistant",
+      "expected_tools": ["linear_create_issue", "linear_create_bug", "linear_create_feature"],
+      "description": "Linear issue creation"
+    },
+    {
+      "id": 23,
+      "category": "project_management",
+      "query": "assign issue",
+      "agent_description": "Jira workflow automation",
+      "expected_tools": ["jira_assign_issue", "jira_update_issue", "jira_transition_issue"],
+      "description": "Jira assignment"
+    },
+    {
+      "id": 24,
+      "category": "project_management",
+      "query": "complete task",
+      "agent_description": "Asana task manager",
+      "expected_tools": ["asana_complete_task", "asana_update_task"],
+      "description": "Asana task completion"
+    },
+    {
+      "id": 25,
+      "category": "project_management",
+      "query": "add comment",
+      "agent_description": "GitHub code review assistant",
+      "expected_tools": ["github_add_comment", "github_add_pr_comment"],
+      "description": "GitHub commenting"
+    },
+    {
+      "id": 26,
+      "category": "project_management",
+      "query": "create pull request",
+      "agent_description": "GitHub workflow automation",
+      "expected_tools": ["github_create_pr", "github_open_pull_request"],
+      "description": "GitHub PR creation"
+    },
+    {
+      "id": 27,
+      "category": "database_context",
+      "query": "query data",
+      "agent_description": "PostgreSQL database administrator",
+      "expected_tools": ["query_database", "run_sql_query", "execute_sql"],
+      "description": "SQL query"
+    },
+    {
+      "id": 28,
+      "category": "database_context",
+      "query": "find documents",
+      "agent_description": "MongoDB data engineer",
+      "expected_tools": ["mongodb_find", "mongodb_find_one", "mongodb_aggregate"],
+      "description": "MongoDB query"
+    },
+    {
+      "id": 29,
+      "category": "database_context",
+      "query": "get value",
+      "agent_description": "Redis cache administrator",
+      "expected_tools": ["redis_get", "redis_hget", "redis_hgetall"],
+      "description": "Redis get"
+    },
+    {
+      "id": 30,
+      "category": "database_context",
+      "query": "insert record",
+      "agent_description": "PostgreSQL data manager",
+      "expected_tools": ["insert_record", "insert_into_table", "execute_sql"],
+      "description": "SQL insert"
+    },
+    {
+      "id": 31,
+      "category": "database_context",
+      "query": "insert document",
+      "agent_description": "MongoDB collection manager",
+      "expected_tools": ["mongodb_insert", "mongodb_insert_many"],
+      "description": "MongoDB insert"
+    },
+    {
+      "id": 32,
+      "category": "database_context",
+      "query": "update record",
+      "agent_description": "SQL database maintenance bot",
+      "expected_tools": ["update_record", "update_table", "execute_sql"],
+      "description": "SQL update"
+    },
+    {
+      "id": 33,
+      "category": "database_context",
+      "query": "update document",
+      "agent_description": "MongoDB data engineer",
+      "expected_tools": ["mongodb_update", "mongodb_update_one"],
+      "description": "MongoDB update"
+    },
+    {
+      "id": 34,
+      "category": "database_context",
+      "query": "delete record",
+      "agent_description": "Database cleanup automation",
+      "expected_tools": ["delete_record", "delete_from_table", "execute_sql"],
+      "description": "SQL delete"
+    },
+    {
+      "id": 35,
+      "category": "cloud_storage",
+      "query": "list objects",
+      "agent_description": "AWS S3 bucket manager",
+      "expected_tools": ["aws_s3_list_objects", "aws_s3_list_buckets"],
+      "description": "S3 listing"
+    },
+    {
+      "id": 36,
+      "category": "cloud_storage",
+      "query": "download file",
+      "agent_description": "AWS S3 storage assistant",
+      "expected_tools": ["aws_s3_download_file", "aws_s3_get_presigned_url"],
+      "description": "S3 download"
+    },
+    {
+      "id": 37,
+      "category": "cloud_storage",
+      "query": "upload blob",
+      "agent_description": "Azure Blob storage assistant",
+      "expected_tools": ["azure_blob_upload", "azure_blob_download"],
+      "description": "Azure blob upload"
+    },
+    {
+      "id": 38,
+      "category": "cloud_storage",
+      "query": "list buckets",
+      "agent_description": "GCP Cloud Storage operator",
+      "expected_tools": ["gcp_list_buckets", "gcp_upload_to_gcs"],
+      "description": "GCS bucket listing"
+    },
+    {
+      "id": 39,
+      "category": "monitoring",
+      "query": "create alert",
+      "agent_description": "Infrastructure monitoring assistant",
+      "expected_tools": ["create_alert", "enable_alert", "update_alert"],
+      "description": "Alert creation"
+    },
+    {
+      "id": 40,
+      "category": "monitoring",
+      "query": "get logs",
+      "agent_description": "Application logging assistant",
+      "expected_tools": ["get_logs", "get_application_logs", "get_error_logs"],
+      "description": "Log retrieval"
+    },
+    {
+      "id": 41,
+      "category": "monitoring",
+      "query": "get metrics",
+      "agent_description": "Performance monitoring agent",
+      "expected_tools": ["get_metrics", "query_metrics", "get_cpu_metrics"],
+      "description": "Metrics query"
+    },
+    {
+      "id": 42,
+      "category": "monitoring",
+      "query": "search logs",
+      "agent_description": "Log analysis assistant",
+      "expected_tools": ["search_logs", "get_logs", "filter_logs"],
+      "description": "Log search"
+    },
+    {
+      "id": 43,
+      "category": "monitoring",
+      "query": "create dashboard",
+      "agent_description": "Visualization manager",
+      "expected_tools": ["create_dashboard", "update_dashboard", "add_dashboard_panel"],
+      "description": "Dashboard creation"
+    },
+    {
+      "id": 44,
+      "category": "notifications",
+      "query": "send notification",
+      "agent_description": "Mobile push notification service",
+      "expected_tools": ["send_push_notification", "send_notification", "send_in_app_notification"],
+      "description": "Push notification"
+    },
+    {
+      "id": 45,
+      "category": "notifications",
+      "query": "send notification",
+      "agent_description": "Desktop alert system",
+      "expected_tools": ["send_desktop_notification", "send_browser_notification"],
+      "description": "Desktop notification"
+    },
+    {
+      "id": 46,
+      "category": "notifications",
+      "query": "send alert",
+      "agent_description": "SMS alerting service",
+      "expected_tools": ["send_sms_alert", "send_sms", "send_sms_notification"],
+      "description": "SMS alert"
+    },
+    {
+      "id": 47,
+      "category": "git_operations",
+      "query": "commit changes",
+      "agent_description": "Git workflow assistant",
+      "expected_tools": ["git_commit", "git_add", "git_push"],
+      "description": "Git commit"
+    },
+    {
+      "id": 48,
+      "category": "git_operations",
+      "query": "create branch",
+      "agent_description": "Git repository manager",
+      "expected_tools": ["git_branch", "git_create_branch", "git_checkout"],
+      "description": "Git branch creation"
+    },
+    {
+      "id": 49,
+      "category": "git_operations",
+      "query": "merge code",
+      "agent_description": "Git integration bot",
+      "expected_tools": ["git_merge", "git_rebase", "github_merge_pr"],
+      "description": "Git merge"
+    },
+    {
+      "id": 50,
+      "category": "edge_cases",
+      "query": "send",
+      "agent_description": "Slack bot",
+      "expected_tools": ["send_slack_message", "send_slack_dm", "slack_send_file"],
+      "description": "Minimal query with context"
+    }
+  ]
+}

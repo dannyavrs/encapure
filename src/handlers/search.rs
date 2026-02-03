@@ -29,6 +29,10 @@ pub struct SearchRequest {
     /// Number of top results to return (default: 3)
     #[serde(default = "default_top_k")]
     pub top_k: usize,
+    /// Optional agent description for context-aware search.
+    /// When provided, biases results toward tools relevant to the agent's role.
+    #[serde(default)]
+    pub agent_description: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -88,6 +92,12 @@ pub async fn search_handler(
     let top_k = request.top_k.min(tools.len());
     let retrieval_candidates = state.config.retrieval_candidates.min(tools.len());
 
+    // Context injection: prepend agent description to query for context-aware search
+    let effective_query = match &request.agent_description {
+        Some(agent_desc) => format!("Agent Context: {}. Query: {}", agent_desc, request.query),
+        None => request.query.clone(),
+    };
+
     // =========================================================================
     // STAGE 1: Bi-encoder fast retrieval (cosine similarity)
     // =========================================================================
@@ -97,16 +107,21 @@ pub async fn search_handler(
 
     let bi_encoder = Arc::clone(&state.bi_encoder);
     let tool_embeddings = Arc::clone(&state.tool_embeddings);
-    let query_for_biencoder = request.query.clone();
+    let query_for_biencoder = effective_query.clone();
 
     // Compute query embedding (fast - single forward pass)
     let stage1_result = tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
         let query_embedding = bi_encoder.encode_with_session(bi_encoder_session_idx, &query_for_biencoder)?;
+        let encode_time = t0.elapsed();
 
         // Compute cosine similarities with all pre-computed tool embeddings
+        let t1 = std::time::Instant::now();
         let similarities = BiEncoderModel::cosine_similarity(&query_embedding, &tool_embeddings);
+        let similarity_time = t1.elapsed();
 
         // Get top-N candidate indices
+        let t2 = std::time::Instant::now();
         let mut indexed_sims: Vec<(usize, f32)> =
             similarities.into_iter().enumerate().collect();
         indexed_sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -116,6 +131,15 @@ pub async fn search_handler(
             .take(retrieval_candidates)
             .map(|(idx, _)| idx)
             .collect();
+        let sort_time = t2.elapsed();
+
+        tracing::info!(
+            encode_ms = encode_time.as_millis(),
+            similarity_ms = similarity_time.as_millis(),
+            sort_ms = sort_time.as_millis(),
+            num_tools = tool_embeddings.nrows(),
+            "Stage 1 breakdown"
+        );
 
         Ok::<Vec<usize>, AppError>(candidates)
     })
@@ -140,40 +164,62 @@ pub async fn search_handler(
     // =========================================================================
 
     // Acquire semaphore with timeout (503 if service overloaded)
+    let semaphore_start = std::time::Instant::now();
     let _permit = tokio::time::timeout(Duration::from_secs(10), state.semaphore.acquire())
         .await
         .map_err(|_| {
             AppError::ResourceError("Service temporarily overloaded, please retry".to_string())
         })?
         .map_err(|_| AppError::ResourceError("Semaphore closed".to_string()))?;
+    let semaphore_wait = semaphore_start.elapsed();
 
     // Acquire session BEFORE spawn_blocking
     let session_idx = state.model.acquire_session()?;
 
+    if semaphore_wait.as_millis() > 5 {
+        tracing::warn!(semaphore_wait_ms = semaphore_wait.as_millis(), "Semaphore wait detected");
+    }
+
     // Clone Arcs for the blocking task
     let model = Arc::clone(&state.model);
     let tokenizer = Arc::clone(&state.tokenizer);
-    let query = request.query.clone();
+    let query = effective_query.clone();  // Use context-injected query for reranking
     let batch_size = state.config.batch_size;
     let candidate_indices = stage1_result;
     let tools_for_rerank = Arc::clone(&tools);
 
     // Run cross-encoder only on candidate tools
     let result = tokio::task::spawn_blocking(move || {
+        let t0 = std::time::Instant::now();
+
         // Get inference views only for candidate tools
         let documents: Vec<String> = candidate_indices
             .iter()
             .map(|&idx| tools_for_rerank[idx].inference_view.clone())
             .collect();
+        let doc_collect_time = t0.elapsed();
 
         let mut all_scores: Vec<f32> = Vec::with_capacity(documents.len());
+        let mut total_tokenize_time = std::time::Duration::ZERO;
+        let mut total_inference_time = std::time::Duration::ZERO;
 
         // Process in batches for memory efficiency
+        let mut total_seq_len = 0usize;
         for chunk in documents.chunks(batch_size) {
             let chunk_vec: Vec<String> = chunk.to_vec();
+
+            let t1 = std::time::Instant::now();
             let (input_ids, attention_mask, _) = tokenizer.tokenize_pairs(&query, &chunk_vec)?;
+            total_tokenize_time += t1.elapsed();
+
+            // Track sequence length for diagnostics
+            total_seq_len = input_ids.ncols();
+
+            let t2 = std::time::Instant::now();
             let batch_scores =
                 model.inference_with_session(session_idx, input_ids, attention_mask)?;
+            total_inference_time += t2.elapsed();
+
             all_scores.extend(batch_scores);
         }
 
@@ -182,6 +228,16 @@ pub async fn search_handler(
             .into_iter()
             .zip(all_scores.into_iter())
             .collect();
+
+        tracing::info!(
+            doc_collect_ms = doc_collect_time.as_millis(),
+            tokenize_ms = total_tokenize_time.as_millis(),
+            inference_ms = total_inference_time.as_millis(),
+            num_candidates = documents.len(),
+            seq_len = total_seq_len,
+            batch_size,
+            "Stage 2 breakdown"
+        );
 
         Ok::<Vec<(usize, f32)>, AppError>(scored_candidates)
     })
@@ -226,20 +282,27 @@ pub async fn search_handler(
         .collect();
 
     let total_time = start_time.elapsed();
+
+    // Measure response size for diagnostics
+    let response = SearchResponse { results };
+    let json_size = serde_json::to_string(&response).map(|s| s.len()).unwrap_or(0);
+
     tracing::info!(
         query = %request.query,
+        agent_context = request.agent_description.as_deref().unwrap_or("none"),
         top_k,
         retrieval_candidates,
         total_ms = total_time.as_millis(),
         stage1_ms = stage1_time.as_millis(),
         stage2_ms = (total_time - stage1_time).as_millis(),
+        response_bytes = json_size,
         "Search completed (two-stage retrieval)"
     );
 
     metrics::counter!("search_requests_total").increment(1);
     metrics::histogram!("search_latency_ms").record(total_time.as_millis() as f64);
 
-    Ok(Json(SearchResponse { results }))
+    Ok(Json(response))
 }
 
 /// Sigmoid activation: 1 / (1 + e^-x)

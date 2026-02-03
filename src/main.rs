@@ -6,7 +6,7 @@ mod ingestion;
 mod persistence;
 mod state;
 
-use crate::config::Config;
+use crate::config::{Config, OperatingMode};
 use crate::handlers::{health_handler, ready_handler, rerank_handler, search_handler};
 use crate::state::AppState;
 
@@ -42,6 +42,21 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let shutdown_timeout = config.shutdown_timeout_secs;
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
+
+    // Log operating mode and concurrency settings
+    let mode = config.mode();
+    let mode_str = match mode {
+        OperatingMode::Single => "single (low-latency)",
+        OperatingMode::Concurrent => "concurrent (high-throughput)",
+        OperatingMode::Custom => "custom",
+    };
+    tracing::info!(
+        mode = mode_str,
+        pool_size = config.pool_size,
+        permits = config.permits,
+        intra_threads = config.intra_threads,
+        "Operating mode configured"
+    );
 
     // Set up Prometheus metrics recorder
     let prometheus_handle = PrometheusBuilder::new()
