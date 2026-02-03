@@ -2,15 +2,9 @@
 /target/
 Cargo.lock
 
-# Model artifacts (large ONNX files - download separately)
-/models/*.onnx
-/models/*.bin
-/models/*.safetensors
-/models/*.json
-/models/
-/bi-encoder-model/*.onnx
-/rerank-model/*.onnx
+# Model artifacts (large ONNX files - download via scripts/download_models)
 *.onnx
+*.safetensors
 
 # Python
 __pycache__/
