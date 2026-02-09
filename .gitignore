@@ -31,3 +31,9 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Development tools
+.claude/
+.serena/
+.encapure/
+nul
