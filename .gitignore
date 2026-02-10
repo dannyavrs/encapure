@@ -5,6 +5,7 @@ Cargo.lock
 # Model artifacts (large ONNX files - download via scripts/download_models)
 *.onnx
 *.safetensors
+models.tar.gz
 
 # Python
 __pycache__/
