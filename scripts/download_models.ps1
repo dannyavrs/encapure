@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoOwner = "dannz0"
+$RepoOwner = "dannyavrs"
 $RepoName = "encapure"
 
 Write-Host ""

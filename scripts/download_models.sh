@@ -4,7 +4,7 @@
 
 set -e
 
-REPO_OWNER="dannz0"
+REPO_OWNER="dannyavrs"
 REPO_NAME="encapure"
 VERSION="${1:-latest}"
 
