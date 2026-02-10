@@ -22,7 +22,7 @@ High-performance, context-aware semantic tool search engine built in Rust. Desig
 ## Quick Start
 
 ```bash
-git clone https://github.com/dannz0/encapure.git
+git clone https://github.com/dannyavrs/encapure.git
 cd encapure
 
 # Download pre-quantized models (~400 MB)
@@ -61,7 +61,7 @@ curl -X POST http://localhost:8080/search \
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/dannz0/encapure.git
+git clone https://github.com/dannyavrs/encapure.git
 cd encapure
 ```
 
@@ -96,7 +96,7 @@ The first build downloads the ONNX Runtime library automatically via the `ort` c
 
 ### Step 4: Generate Embeddings Cache (Optional)
 
-On first startup with a tools dataset, Encapure computes bi-encoder embeddings for all tools and caches them to `.encapure/embeddings.bin`. Subsequent startups load the cache instantly. The repository includes a pre-computed cache for the included 1,000-tool dataset.
+On first startup with a tools dataset, Encapure computes bi-encoder embeddings for all tools and caches them to `.encapure/embeddings.bin`. Subsequent startups load the cache instantly.
 
 ---
 
